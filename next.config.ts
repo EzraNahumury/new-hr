@@ -18,14 +18,9 @@ const nextConfig: NextConfig = {
   // NOTE: cacheComponents / partialPrefetching intentionally disabled — this
   // app is fully per-request dynamic (cookie auth + live payroll/attendance),
   // matching the original web_hr-main runtime model.
-  turbopack: {
-    rules: {
-      "*.css": {
-        loaders: ["@tailwindcss/turbopack"],
-        as: "*.css",
-      },
-    },
-  },
+  // Tailwind v4 is processed via PostCSS (postcss.config.mjs +
+  // @tailwindcss/postcss) so the build is portable across hosts (the previous
+  // custom @tailwindcss/turbopack loader rule panicked on the deploy host).
 };
 
 export default nextConfig;

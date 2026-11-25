@@ -4,6 +4,10 @@ const nextConfig: NextConfig = {
   /* config options here */
   experimental: {
     agentFeedback: true,
+    // Cap build worker count. The deploy host reports many CPUs but has a low
+    // thread/process limit; the default (one worker per CPU) exhausts it during
+    // "Collecting page data" -> "OS can't spawn worker thread" (EAGAIN) / SIGABRT.
+    cpus: 1,
   },
   // Serve uploaded files through the auth-aware route handler (ported from
   // web_hr-main). Keeps existing /uploads/* URLs working.

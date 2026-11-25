@@ -1,0 +1,305 @@
+import { NextResponse } from "next/server";
+
+import { getCurrentAdminSession, isPayrollEditor } from "@/lib/auth";
+import {
+  setDendaPenjahitOverride,
+  setKerajinanPenjahitOverride,
+  setPotonganAbsensiOverride,
+  setPotonganSp2Override,
+  upsertPayrollPeriodOmzet,
+  upsertPayrollFromForm,
+  type OmzetUnitInput,
+  type PayrollFormPayload,
+} from "@/lib/payroll-admin";
+
+function parseOverride(value: unknown) {
+  if (value === "" || value === null || value === undefined) {
+    return null;
+  }
+  const parsed = Number(value);
+  return Number.isFinite(parsed) && parsed >= 0 ? parsed : null;
+}
+
+function parseCurrency(value: unknown) {
+  const parsed = Number(value);
+  return Number.isFinite(parsed) && parsed >= 0 ? parsed : null;
+}
+
+function parsePositiveInt(value: unknown) {
+  const parsed = Number(value);
+  return Number.isInteger(parsed) && parsed > 0 ? parsed : null;
+}
+
+function getRequestedPeriod(body: Record<string, unknown>) {
+  const month = parsePositiveInt(body.month);
+  const year = parsePositiveInt(body.year);
+
+  if (month === null || year === null || month > 12) {
+    return { error: "Periode payroll tidak valid." };
+  }
+
+  return { period: { month, year } };
+}
+
+function validatePayrollPayload(body: Record<string, unknown>) {
+  const employeeId = Number(body.employeeId);
+
+  if (!Number.isInteger(employeeId) || employeeId <= 0) {
+    return { error: "Karyawan wajib dipilih." };
+  }
+
+  const values = {
+    gajiPerDay: parseCurrency(body.gajiPerDay),
+    tunjanganJabatan: parseCurrency(body.tunjanganJabatan),
+    uangMakan: parseCurrency(body.uangMakan),
+    subsidi: parseCurrency(body.subsidi),
+    uangKerajinan: parseCurrency(body.uangKerajinan),
+    bpjs: parseCurrency(body.bpjs),
+    bonusPerforma: parseCurrency(body.bonusPerforma),
+    insentif: parseCurrency(body.insentif),
+    uangTransport: parseCurrency(body.uangTransport),
+    kendaraan: parseCurrency(body.kendaraan),
+    perjalananDinasReimburse: parseCurrency(body.perjalananDinasReimburse),
+    overrideMasuk: parseOverride(body.overrideMasuk),
+    overrideLembur: parseOverride(body.overrideLembur),
+    overrideIzin: parseOverride(body.overrideIzin),
+    overrideSakit: parseOverride(body.overrideSakit),
+    overrideSakitTanpaSurat: parseOverride(body.overrideSakitTanpaSurat),
+    overrideSetengahHari: parseOverride(body.overrideSetengahHari),
+    overrideKontrak: parseOverride(body.overrideKontrak),
+    overridePinjaman: parseOverride(body.overridePinjaman),
+    overridePinjamanPribadi: parseOverride(body.overridePinjamanPribadi),
+    overrideGajiPokok: parseOverride(body.overrideGajiPokok),
+    potonganSp2: parseOverride(body.potonganSp2),
+  };
+
+  if ([
+    values.gajiPerDay, values.tunjanganJabatan, values.uangMakan, values.subsidi,
+    values.uangKerajinan, values.bpjs, values.bonusPerforma, values.insentif, values.uangTransport,
+    values.kendaraan, values.perjalananDinasReimburse
+  ].some((value) => value === null)) {
+    return { error: "Semua nominal payroll harus berupa angka valid dan tidak boleh negatif." };
+  }
+
+  const freelanceRateType = body.freelanceRateType === "per_jam" ? "per_jam" : "per_hari";
+  const gajiPerJam = parseCurrency(body.gajiPerJam) ?? 0;
+
+  const payload: PayrollFormPayload = {
+    employeeId,
+    payrollType: "non_sales",
+    expectedInputUpdatedAt:
+      typeof body.expectedInputUpdatedAt === "string" && body.expectedInputUpdatedAt
+        ? body.expectedInputUpdatedAt
+        : null,
+    gajiPerDay: values.gajiPerDay ?? 0,
+    tunjanganJabatan: values.tunjanganJabatan ?? 0,
+    uangMakan: values.uangMakan ?? 0,
+    subsidi: values.subsidi ?? 0,
+    uangKerajinan: values.uangKerajinan ?? 0,
+    bpjs: values.bpjs ?? 0,
+    bonusPerforma: values.bonusPerforma ?? 0,
+    totalOmzet: 0,
+    insentif: values.insentif ?? 0,
+    uangTransport: values.uangTransport ?? 0,
+    kendaraan: values.kendaraan ?? 0,
+    perjalananDinasReimburse: values.perjalananDinasReimburse ?? 0,
+    overrideMasuk: values.overrideMasuk,
+    overrideLembur: values.overrideLembur,
+    overrideIzin: values.overrideIzin,
+    overrideSakit: values.overrideSakit,
+    overrideSakitTanpaSurat: values.overrideSakitTanpaSurat,
+    overrideSetengahHari: values.overrideSetengahHari,
+    overrideKontrak: values.overrideKontrak,
+    overridePinjaman: values.overridePinjaman,
+    overridePinjamanPribadi: values.overridePinjamanPribadi,
+    overrideGajiPokok: values.overrideGajiPokok,
+    potonganSp2: values.potonganSp2,
+    potonganSp2Note:
+      typeof body.potonganSp2Note === "string" ? body.potonganSp2Note.trim() || null : null,
+    freelanceRateType,
+    gajiPerJam,
+  };
+
+  return { payload };
+}
+
+function validateOmzetPayload(body: Record<string, unknown>) {
+  const rawUnits = body.units;
+
+  if (Array.isArray(rawUnits)) {
+    const inputs: OmzetUnitInput[] = [];
+    for (const item of rawUnits) {
+      if (!item || typeof item !== "object") {
+        return { error: "Format omzet per unit tidak valid." };
+      }
+      const unitName = typeof (item as Record<string, unknown>).unit === "string"
+        ? ((item as Record<string, unknown>).unit as string).trim()
+        : "";
+      const total = parseCurrency((item as Record<string, unknown>).totalOmzet);
+      if (!unitName) {
+        return { error: "Nama unit omzet wajib diisi." };
+      }
+      if (total === null) {
+        return { error: `Nominal omzet untuk ${unitName} harus angka valid dan tidak boleh negatif.` };
+      }
+      inputs.push({
+        unit: unitName,
+        totalOmzet: total,
+        isCustomBonus: Boolean((item as Record<string, unknown>).isCustomBonus),
+      });
+    }
+    if (!inputs.length) {
+      return { error: "Tidak ada data omzet untuk disimpan." };
+    }
+    return { units: inputs };
+  }
+
+  // Backward-compat: single total omzet
+  const totalOmzet = parseCurrency(body.totalOmzet);
+  if (totalOmzet === null) {
+    return { error: "Total omzet harus berupa angka valid dan tidak boleh negatif." };
+  }
+  return { totalOmzet };
+}
+
+export async function POST(request: Request) {
+  const admin = await getCurrentAdminSession();
+
+  if (!admin) {
+    return NextResponse.json({ message: "Unauthorized." }, { status: 401 });
+  }
+
+  if (!(await isPayrollEditor(admin.email))) {
+    return NextResponse.json(
+      { message: "Hanya admin tertentu yang berhak mengedit Summary Payroll. Hubungi admin pengelola payroll." },
+      { status: 403 },
+    );
+  }
+
+  try {
+    const body = (await request.json()) as Record<string, unknown>;
+    const periodResult = getRequestedPeriod(body);
+
+    if ("error" in periodResult) {
+      return NextResponse.json({ message: periodResult.error }, { status: 400 });
+    }
+
+    const action =
+      body.action === "save_omzet"
+        ? "save_omzet"
+        : body.action === "save_potongan_absensi"
+          ? "save_potongan_absensi"
+          : body.action === "save_potongan_sp2"
+          ? "save_potongan_sp2"
+          : body.action === "save_denda_penjahit"
+            ? "save_denda_penjahit"
+            : body.action === "save_kerajinan_penjahit"
+              ? "save_kerajinan_penjahit"
+              : "save_payroll";
+
+    if (action === "save_potongan_absensi") {
+      const employeeId = Number(body.employeeId);
+      if (!Number.isInteger(employeeId) || employeeId <= 0) {
+        return NextResponse.json({ message: "Karyawan tidak valid." }, { status: 400 });
+      }
+      // value null/"" -> reset ke otomatis
+      const value = parseOverride(body.potonganAbsensi);
+      const saved = await setPotonganAbsensiOverride(employeeId, periodResult.period, value);
+      return NextResponse.json({
+        message:
+          value === null
+            ? `Potongan absensi periode ${saved.periodMonth}/${saved.periodYear} dikembalikan ke otomatis.`
+            : `Potongan absensi periode ${saved.periodMonth}/${saved.periodYear} berhasil diubah.`,
+        saved,
+      });
+    }
+
+    if (action === "save_potongan_sp2") {
+      const employeeId = Number(body.employeeId);
+      if (!Number.isInteger(employeeId) || employeeId <= 0) {
+        return NextResponse.json({ message: "Karyawan tidak valid." }, { status: 400 });
+      }
+      // value null/"" -> hapus potongan lain-lain
+      const value = parseOverride(body.potonganSp2);
+      const saved = await setPotonganSp2Override(employeeId, periodResult.period, value);
+      return NextResponse.json({
+        message:
+          value === null
+            ? `Potongan lain-lain periode ${saved.periodMonth}/${saved.periodYear} dihapus.`
+            : `Potongan lain-lain periode ${saved.periodMonth}/${saved.periodYear} berhasil diubah.`,
+        saved,
+      });
+    }
+
+    if (action === "save_denda_penjahit") {
+      const employeeId = Number(body.employeeId);
+      if (!Number.isInteger(employeeId) || employeeId <= 0) {
+        return NextResponse.json({ message: "Karyawan tidak valid." }, { status: 400 });
+      }
+      const value = parseOverride(body.denda);
+      const saved = await setDendaPenjahitOverride(employeeId, periodResult.period, value);
+      return NextResponse.json({
+        message:
+          value === null
+            ? `Denda periode ${saved.periodMonth}/${saved.periodYear} dikembalikan ke otomatis.`
+            : `Denda periode ${saved.periodMonth}/${saved.periodYear} berhasil diubah.`,
+        saved,
+      });
+    }
+
+    if (action === "save_kerajinan_penjahit") {
+      const employeeId = Number(body.employeeId);
+      if (!Number.isInteger(employeeId) || employeeId <= 0) {
+        return NextResponse.json({ message: "Karyawan tidak valid." }, { status: 400 });
+      }
+      const value = parseOverride(body.kerajinan);
+      const saved = await setKerajinanPenjahitOverride(employeeId, periodResult.period, value);
+      return NextResponse.json({
+        message:
+          value === null
+            ? `Kerajinan periode ${saved.periodMonth}/${saved.periodYear} dikembalikan ke otomatis.`
+            : `Kerajinan periode ${saved.periodMonth}/${saved.periodYear} berhasil diubah.`,
+        saved,
+      });
+    }
+
+    if (action === "save_omzet") {
+      const result = validateOmzetPayload(body);
+
+      if ("error" in result) {
+        return NextResponse.json({ message: result.error }, { status: 400 });
+      }
+
+      const inputs: OmzetUnitInput[] | number =
+        "units" in result && result.units ? result.units : (result.totalOmzet ?? 0);
+      const saved = await upsertPayrollPeriodOmzet(inputs, periodResult.period);
+
+      const perUnitSummary = saved.units
+        .map((item) => `${item.label} ${item.bonusOmzet.toLocaleString("id-ID")}`)
+        .join(", ");
+      return NextResponse.json({
+        message: saved.isUpdate
+          ? `Omzet periode ${saved.periodMonth}/${saved.periodYear} berhasil diupdate. Bonus omzet: ${perUnitSummary}.`
+          : `Omzet periode ${saved.periodMonth}/${saved.periodYear} berhasil disimpan. Bonus omzet: ${perUnitSummary}.`,
+        saved,
+      });
+    }
+
+    const result = validatePayrollPayload(body);
+
+    if ("error" in result) {
+      return NextResponse.json({ message: result.error }, { status: 400 });
+    }
+
+    const saved = await upsertPayrollFromForm(result.payload, periodResult.period);
+
+    return NextResponse.json({
+      message: `Payroll ${saved.employeeName} untuk periode ${saved.periodMonth}/${saved.periodYear} berhasil disimpan.`,
+      saved,
+    });
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "Gagal menyimpan payroll.";
+    console.error("Create payroll summary error", error);
+    return NextResponse.json({ message }, { status: 500 });
+  }
+}

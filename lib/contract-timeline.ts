@@ -1,0 +1,254 @@
+export const TRAINING_DURATION_MONTHS = 3;
+export const CONTRACT_DURATION_MONTHS = 12;
+export const CONTRACT_DEDUCTION_DURATION_MONTHS = 5;
+export const DEFAULT_CONTRACT_DEDUCTION_NOMINAL = 200000;
+
+const CONTRACT_DEDUCTION_BY_ROLE: Record<string, number> = {
+  ceo: DEFAULT_CONTRACT_DEDUCTION_NOMINAL,
+  secretary: DEFAULT_CONTRACT_DEDUCTION_NOMINAL,
+  manager: DEFAULT_CONTRACT_DEDUCTION_NOMINAL,
+  supervisor: DEFAULT_CONTRACT_DEDUCTION_NOMINAL,
+  staff: DEFAULT_CONTRACT_DEDUCTION_NOMINAL,
+};
+
+type ParsedDate = {
+  year: number;
+  month: number;
+  day: number;
+};
+
+export type EmploymentTimeline = {
+  trainingStartDate: string;
+  trainingEndDate: string;
+  contractDate: string;
+  contractEndDate: string;
+  deductionStartDate: string;
+  deductionEndDate: string;
+};
+
+export type ContractDeductionPeriod = {
+  sequence: number;
+  month: number;
+  year: number;
+  monthLabel: string;
+};
+
+function parseIsoDate(value: string) {
+  const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(value);
+
+  if (!match) {
+    return null;
+  }
+
+  const year = Number(match[1]);
+  const month = Number(match[2]);
+  const day = Number(match[3]);
+  const candidate = new Date(Date.UTC(year, month - 1, day));
+
+  if (
+    candidate.getUTCFullYear() !== year ||
+    candidate.getUTCMonth() !== month - 1 ||
+    candidate.getUTCDate() !== day
+  ) {
+    return null;
+  }
+
+  return { year, month, day } satisfies ParsedDate;
+}
+
+function formatIsoDate(date: Date) {
+  const year = date.getUTCFullYear();
+  const month = `${date.getUTCMonth() + 1}`.padStart(2, "0");
+  const day = `${date.getUTCDate()}`.padStart(2, "0");
+  return `${year}-${month}-${day}`;
+}
+
+function getDaysInMonth(year: number, monthIndex: number) {
+  return new Date(Date.UTC(year, monthIndex + 1, 0)).getUTCDate();
+}
+
+function getTodayInJakarta() {
+  const parts = new Intl.DateTimeFormat("en-CA", {
+    timeZone: "Asia/Jakarta",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).formatToParts(new Date());
+
+  const year = parts.find((part) => part.type === "year")?.value;
+  const month = parts.find((part) => part.type === "month")?.value;
+  const day = parts.find((part) => part.type === "day")?.value;
+
+  return `${year}-${month}-${day}`;
+}
+
+export function addMonthsToIsoDate(value: string, months: number) {
+  const parsed = parseIsoDate(value);
+
+  if (!parsed) {
+    return null;
+  }
+
+  const totalMonths = parsed.year * 12 + (parsed.month - 1) + months;
+  const targetYear = Math.floor(totalMonths / 12);
+  const targetMonthIndex = ((totalMonths % 12) + 12) % 12;
+  const targetDay = Math.min(parsed.day, getDaysInMonth(targetYear, targetMonthIndex));
+
+  return formatIsoDate(new Date(Date.UTC(targetYear, targetMonthIndex, targetDay)));
+}
+
+export function calculateContractEndDate(contractDate: string) {
+  return addMonthsToIsoDate(contractDate, CONTRACT_DURATION_MONTHS);
+}
+
+// Tanggal mulai kontrak SELALU dikunci ke tanggal ini (mengikuti akhir periode payroll,
+// yang berakhir tgl 25), berapa pun tanggal masuk karyawan.
+export const CONTRACT_START_DAY_OF_MONTH = 25;
+
+function withDayOfMonth(isoDate: string, day: number) {
+  const parsed = parseIsoDate(isoDate);
+  if (!parsed) {
+    return null;
+  }
+  const targetDay = Math.min(day, getDaysInMonth(parsed.year, parsed.month - 1));
+  return formatIsoDate(new Date(Date.UTC(parsed.year, parsed.month - 1, targetDay)));
+}
+
+export function calculateEmploymentTimeline(firstJoinDate: string) {
+  const rawContractDate = addMonthsToIsoDate(firstJoinDate, TRAINING_DURATION_MONTHS);
+
+  if (!rawContractDate) {
+    return null;
+  }
+
+  // Kunci tanggal mulai kontrak ke tgl 25. Contoh: masuk 1 Agustus -> +3 bulan = 1 Nov
+  // -> jadi 25 Nov. Selesai kontrak = +12 bulan (tetap tgl 25).
+  const contractDate = withDayOfMonth(rawContractDate, CONTRACT_START_DAY_OF_MONTH);
+
+  if (!contractDate) {
+    return null;
+  }
+
+  const contractEndDate = calculateContractEndDate(contractDate);
+  const deductionEndDate = addMonthsToIsoDate(
+    contractDate,
+    CONTRACT_DEDUCTION_DURATION_MONTHS + 1,
+  );
+
+  if (!contractEndDate || !deductionEndDate) {
+    return null;
+  }
+
+  return {
+    trainingStartDate: firstJoinDate,
+    trainingEndDate: contractDate,
+    contractDate,
+    contractEndDate,
+    deductionStartDate: contractDate,
+    deductionEndDate,
+  } satisfies EmploymentTimeline;
+}
+
+export function getFirstFiveContractPeriods(contractDate: string) {
+  const parsed = parseIsoDate(contractDate);
+
+  if (!parsed) {
+    return [] satisfies ContractDeductionPeriod[];
+  }
+
+  return Array.from({ length: CONTRACT_DEDUCTION_DURATION_MONTHS }, (_, index) => {
+    const yearMonth = addMonthsToIsoDate(
+      `${parsed.year}-${`${parsed.month}`.padStart(2, "0")}-01`,
+      index + 1,
+    );
+
+    if (!yearMonth) {
+      throw new Error("Periode potongan kontrak tidak valid.");
+    }
+
+    const period = parseIsoDate(yearMonth);
+
+    if (!period) {
+      throw new Error("Periode potongan kontrak tidak valid.");
+    }
+
+    return {
+      sequence: index + 1,
+      month: period.month,
+      year: period.year,
+      monthLabel: new Intl.DateTimeFormat("id-ID", {
+        month: "long",
+        year: "numeric",
+        timeZone: "Asia/Jakarta",
+      }).format(new Date(Date.UTC(period.year, period.month - 1, 1))),
+    } satisfies ContractDeductionPeriod;
+  });
+}
+
+// 5 periode potongan mulai dari bulan tertentu (YYYYMM). Berbeda dgn getFirstFiveContractPeriods
+// (yang mulai bulan kontrak + 1), fungsi ini mulai TEPAT dari startYm — dipakai bila admin
+// meng-override "bulan mulai" potongan (mis. karyawan yang sudah terlanjur dipotong di payroll
+// dari bulan berbeda). sequence 1 = startYm itu sendiri.
+export function getContractPeriodsFromYm(startYm: number) {
+  const startYear = Math.floor(startYm / 100);
+  const startMonth = startYm % 100;
+  if (!startYear || startMonth < 1 || startMonth > 12) {
+    return [] satisfies ContractDeductionPeriod[];
+  }
+  return Array.from({ length: CONTRACT_DEDUCTION_DURATION_MONTHS }, (_, index) => {
+    const yearMonth = addMonthsToIsoDate(
+      `${startYear}-${`${startMonth}`.padStart(2, "0")}-01`,
+      index,
+    );
+    if (!yearMonth) {
+      throw new Error("Periode potongan kontrak tidak valid.");
+    }
+    const period = parseIsoDate(yearMonth);
+    if (!period) {
+      throw new Error("Periode potongan kontrak tidak valid.");
+    }
+    return {
+      sequence: index + 1,
+      month: period.month,
+      year: period.year,
+      monthLabel: new Intl.DateTimeFormat("id-ID", {
+        month: "long",
+        year: "numeric",
+        timeZone: "Asia/Jakarta",
+      }).format(new Date(Date.UTC(period.year, period.month - 1, 1))),
+    } satisfies ContractDeductionPeriod;
+  });
+}
+
+// Periode potongan efektif: bila startYm di-override -> mulai dari situ; kalau tidak -> default
+// (bulan kontrak + 1). Dipakai buildPlan & sync agar konsisten.
+export function getContractDeductionPeriods(contractDate: string, startYm?: number | null) {
+  if (startYm != null) return getContractPeriodsFromYm(startYm);
+  return getFirstFiveContractPeriods(contractDate);
+}
+
+export function isContractDeductionActive(
+  contractDate: string,
+  currentDate = getTodayInJakarta(),
+) {
+  const deductionEndDate = addMonthsToIsoDate(
+    contractDate,
+    CONTRACT_DEDUCTION_DURATION_MONTHS + 1,
+  );
+
+  if (!deductionEndDate) {
+    return false;
+  }
+
+  return currentDate >= contractDate && currentDate < deductionEndDate;
+}
+
+export function getContractDeductionNominalByRole(role: string | null | undefined) {
+  const normalized = role?.trim().toLowerCase() ?? "";
+  return CONTRACT_DEDUCTION_BY_ROLE[normalized] ?? DEFAULT_CONTRACT_DEDUCTION_NOMINAL;
+}
+
+export function buildContractDeductionDescription(sequence: number) {
+  return `Potongan kontrak bulan ke-${sequence} dari 5`;
+}
+

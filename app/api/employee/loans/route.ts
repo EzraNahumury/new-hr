@@ -1,0 +1,106 @@
+import { NextResponse } from "next/server";
+
+import { getCurrentEmployeeSession } from "@/lib/auth";
+import { getEmployeeByUserId } from "@/lib/hris";
+import {
+  checkFullLoanEligibility,
+  createEmployeeLoanRequest,
+  EMPLOYEE_LOAN_MAX_AMOUNT,
+  listEmployeeLoans,
+} from "@/lib/loans";
+import { jsonNoStore } from "@/lib/api-json";
+
+export const dynamic = "force-dynamic";
+
+// GET /api/employee/loans — daftar pinjaman + sisa milik karyawan yang login (mobile + web).
+export async function GET() {
+  const session = await getCurrentEmployeeSession();
+  if (!session) return jsonNoStore({ message: "Unauthorized." }, 401);
+
+  const employee = await getEmployeeByUserId(session.userId);
+  if (!employee) return jsonNoStore({ message: "Data karyawan tidak ditemukan." }, 404);
+
+  const rows = await listEmployeeLoans(employee.id);
+  return jsonNoStore({ rows });
+}
+
+function parsePositiveNumber(value: unknown) {
+  const parsed = Number(value);
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : null;
+}
+
+function parsePositiveInt(value: unknown) {
+  const parsed = Number(value);
+  return Number.isInteger(parsed) && parsed > 0 ? parsed : null;
+}
+
+function parseSqlDate(value: unknown) {
+  if (typeof value !== "string") {
+    return null;
+  }
+
+  const trimmed = value.trim();
+  return /^\d{4}-\d{2}-\d{2}$/.test(trimmed) ? trimmed : null;
+}
+
+export async function POST(request: Request) {
+  const session = await getCurrentEmployeeSession();
+
+  if (!session) {
+    return NextResponse.json({ message: "Unauthorized." }, { status: 401 });
+  }
+
+  const employee = await getEmployeeByUserId(session.userId);
+
+  if (!employee) {
+    return NextResponse.json({ message: "Data karyawan tidak ditemukan." }, { status: 404 });
+  }
+
+  const eligibility = await checkFullLoanEligibility(employee.id, employee.tanggal_masuk_pertama);
+  if (!eligibility.eligible) {
+    return NextResponse.json(
+      { message: eligibility.reason ?? "Anda belum memenuhi syarat untuk mengajukan pinjaman." },
+      { status: 403 },
+    );
+  }
+
+  try {
+    const body = (await request.json()) as Record<string, unknown>;
+    const totalLoan = parsePositiveNumber(body.totalLoan);
+    const installmentCount = parsePositiveInt(body.installmentCount);
+    const requestDate = parseSqlDate(body.requestDate);
+
+    if (!totalLoan || !installmentCount || !requestDate) {
+      return NextResponse.json(
+        { message: "Jumlah pinjaman, jumlah angsuran, dan tanggal pengajuan wajib valid." },
+        { status: 400 },
+      );
+    }
+
+    if (totalLoan > EMPLOYEE_LOAN_MAX_AMOUNT) {
+      return NextResponse.json(
+        { message: `Pengajuan mandiri dibatasi maksimal Rp${EMPLOYEE_LOAN_MAX_AMOUNT.toLocaleString("id-ID")}. Untuk kebutuhan lebih, hubungi admin.` },
+        { status: 400 },
+      );
+    }
+
+    const loan = await createEmployeeLoanRequest({
+      employeeId: employee.id,
+      totalLoan,
+      installmentCount,
+      requestDate,
+    });
+
+    return NextResponse.json(
+      {
+        message: "Pengajuan pinjaman berhasil dikirim dan menunggu approval admin.",
+        loan,
+      },
+      { status: 201 },
+    );
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "Gagal mengirim pengajuan pinjaman.";
+    console.error("Create employee loan request error", error);
+    return NextResponse.json({ message }, { status: 500 });
+  }
+}

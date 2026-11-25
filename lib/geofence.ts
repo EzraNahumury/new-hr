@@ -1,0 +1,234 @@
+export const MAX_GEOFENCE_RADIUS_METERS = 25;
+
+// Toleransi tambahan berbasis AKURASI GPS (meter). HP sering salah posisi puluhan meter
+// walau fisik di lokasi. Karyawan dianggap valid bila jarak <= radius + min(akurasi, CAP).
+// Di-cap supaya fix GPS yang sangat buruk (mis. akurasi 200m+) TIDAK otomatis lolos.
+export const GEOFENCE_ACCURACY_TOLERANCE_CAP = 40;
+
+export type WorkLocation = {
+  label: string;
+  latitude: number;
+  longitude: number;
+  // Radius khusus untuk lokasi ini; default ke MAX_GEOFENCE_RADIUS_METERS
+  radiusMeters?: number;
+};
+
+// Koordinat diambil dari Google Maps share link yang diberikan.
+// Satu penempatan bisa punya lebih dari satu lokasi (misal Gudang punya 2 titik);
+// karyawan dianggap valid kalau masuk radius salah satu titiknya.
+export const WORK_LOCATIONS: Record<string, WorkLocation[]> = {
+  Office: [
+    {
+      label: "Office (Jl. Wonocatur)",
+      latitude: -7.8026256,
+      longitude: 110.4068213,
+      radiusMeters: 50,
+    },
+  ],
+  Toko: [
+    {
+      label: "Toko (AVA Sport Store)",
+      latitude: -7.8026601,
+      longitude: 110.4066919,
+      radiusMeters: 50,
+    },
+  ],
+  "Toko Solo": [
+    {
+      label: "Toko Solo (Ruko Menco City, Kartasura)",
+      latitude: -7.5546186,
+      longitude: 110.7693092,
+      radiusMeters: 50,
+    },
+  ],
+  Ayres: [
+    {
+      label: "Ayres Apparel",
+      latitude: -7.8067173,
+      longitude: 110.4056819,
+      radiusMeters: 50,
+    },
+  ],
+  JNE: [
+    {
+      label: "JNE Ambarrukmo",
+      latitude: -7.7831106,
+      longitude: 110.4007024,
+      radiusMeters: 50,
+    },
+  ],
+  "Bank BCA KC Adisucipto": [
+    {
+      label: "Bank BCA KC Adisucipto",
+      latitude: -7.7834627,
+      longitude: 110.4082009,
+      radiusMeters: 100,
+    },
+  ],
+  Gudang: [
+    {
+      label: "Gudang Avasportivo 1",
+      latitude: -7.8020204,
+      longitude: 110.4090615,
+      radiusMeters: 100,
+    },
+    {
+      label: "Gudang Avasportivo 2",
+      latitude: -7.8056449,
+      longitude: 110.4037354,
+      radiusMeters: 100,
+    },
+  ],
+};
+
+function getLocationRadius(location: WorkLocation): number {
+  return location.radiusMeters ?? MAX_GEOFENCE_RADIUS_METERS;
+}
+
+export const WFA_PLACEMENT = "WFA";
+
+export type GeofenceResult =
+  | {
+      valid: true;
+      bypass: true;
+      reason: "wfa";
+      distanceMeters: null;
+      location: null;
+      placement: string;
+    }
+  | {
+      valid: true;
+      bypass: false;
+      distanceMeters: number;
+      location: WorkLocation;
+      placement: string;
+    }
+  | {
+      valid: false;
+      bypass: false;
+      reason: "no_placement" | "unknown_placement" | "out_of_range";
+      distanceMeters: number | null;
+      location: WorkLocation | null;
+      placement: string | null;
+      message: string;
+    };
+
+function toRad(deg: number) {
+  return (deg * Math.PI) / 180;
+}
+
+export function haversineDistanceMeters(
+  lat1: number,
+  lng1: number,
+  lat2: number,
+  lng2: number,
+) {
+  const R = 6_371_000;
+  const dLat = toRad(lat2 - lat1);
+  const dLng = toRad(lng2 - lng1);
+  const a =
+    Math.sin(dLat / 2) ** 2 +
+    Math.cos(toRad(lat1)) * Math.cos(toRad(lat2)) * Math.sin(dLng / 2) ** 2;
+  const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+  return R * c;
+}
+
+export function checkGeofence(
+  placementInput: string | string[] | null | undefined,
+  latitude: number,
+  longitude: number,
+  accuracyMeters?: number | null,
+): GeofenceResult {
+  // Toleransi akurasi GPS (dibatasi CAP). Fix buruk (akurasi besar) hanya menambah sampai CAP.
+  const accuracyTolerance = Math.min(
+    Math.max(Number.isFinite(accuracyMeters as number) ? (accuracyMeters as number) : 0, 0),
+    GEOFENCE_ACCURACY_TOLERANCE_CAP,
+  );
+  const placements = Array.isArray(placementInput)
+    ? placementInput.filter(Boolean)
+    : placementInput
+      ? [placementInput]
+      : [];
+
+  if (placements.length === 0) {
+    return {
+      valid: false,
+      bypass: false,
+      reason: "no_placement",
+      distanceMeters: null,
+      location: null,
+      placement: null,
+      message:
+        "Penempatan Anda belum di-set oleh admin. Hubungi HR untuk melengkapi data sebelum presensi.",
+    };
+  }
+
+  // WFA bypass if any placement is WFA
+  if (placements.includes(WFA_PLACEMENT)) {
+    return {
+      valid: true,
+      bypass: true,
+      reason: "wfa",
+      distanceMeters: null,
+      location: null,
+      placement: WFA_PLACEMENT,
+    };
+  }
+
+  // Find the single closest valid location across all placements
+  let bestValid: { placement: string; location: WorkLocation; distance: number } | null = null;
+  let bestInvalid: { placement: string; location: WorkLocation; distance: number } | null = null;
+
+  for (const placement of placements) {
+    const locations = WORK_LOCATIONS[placement];
+    if (!locations || locations.length === 0) continue;
+
+    for (const loc of locations) {
+      const d = haversineDistanceMeters(latitude, longitude, loc.latitude, loc.longitude);
+      const radius = getLocationRadius(loc) + accuracyTolerance;
+      if (d <= radius) {
+        if (!bestValid || d < bestValid.distance) {
+          bestValid = { placement, location: loc, distance: d };
+        }
+      } else {
+        if (!bestInvalid || d < bestInvalid.distance) {
+          bestInvalid = { placement, location: loc, distance: d };
+        }
+      }
+    }
+  }
+
+  if (bestValid) {
+    return {
+      valid: true,
+      bypass: false,
+      distanceMeters: bestValid.distance,
+      location: bestValid.location,
+      placement: bestValid.placement,
+    };
+  }
+
+  // All placements out of range — report closest
+  if (bestInvalid) {
+    return {
+      valid: false,
+      bypass: false,
+      reason: "out_of_range",
+      distanceMeters: bestInvalid.distance,
+      location: bestInvalid.location,
+      placement: bestInvalid.placement,
+      message: `Anda berada ${Math.round(bestInvalid.distance)} meter dari ${bestInvalid.location.label} (lokasi terdekat). Maksimal jarak presensi adalah ${getLocationRadius(bestInvalid.location)} meter.`,
+    };
+  }
+
+  // All placement names unknown
+  return {
+    valid: false,
+    bypass: false,
+    reason: "unknown_placement",
+    distanceMeters: null,
+    location: null,
+    placement: placements[0],
+    message: `Lokasi untuk penempatan "${placements.join(", ")}" belum terdaftar. Hubungi HR.`,
+  };
+}

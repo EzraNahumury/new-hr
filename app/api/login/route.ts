@@ -1,0 +1,139 @@
+import { NextResponse } from "next/server";
+import { RowDataPacket } from "mysql2";
+import { pool } from "@/lib/db";
+import {
+  clearAllSessionCookies,
+  setAdminSessionCookie,
+  setEmployeeSessionCookie,
+  setSpvSessionCookie,
+} from "@/lib/auth";
+
+// Pastikan route ini selalu dinamis dan tidak pernah di-cache oleh CDN/proxy (hcdn Hostinger).
+export const dynamic = "force-dynamic";
+
+// Helper: balas JSON + header anti-cache supaya CDN/WAF tidak menyimpan respons login.
+function jsonNoStore(data: unknown, status = 200) {
+  const res = NextResponse.json(data, { status });
+  res.headers.set("Cache-Control", "no-store, no-cache, must-revalidate, max-age=0");
+  res.headers.set("Pragma", "no-cache");
+  return res;
+}
+
+type UserRow = RowDataPacket & {
+  id: number;
+  nama: string;
+  email: string;
+  password: string;
+  role: "admin" | "karyawan" | "spv";
+  status_aktif: number;
+  status_data: string | null;
+};
+
+export async function POST(request: Request) {
+  try {
+    const body = (await request.json()) as {
+      email?: string;
+      password?: string;
+    };
+
+    const email = body.email?.trim().toLowerCase();
+    const password = body.password?.trim();
+
+    if (!email || !password) {
+      return jsonNoStore({ message: "Email dan password wajib diisi." }, 400);
+    }
+
+    const [rows] = await pool.query<UserRow[]>(
+      `
+        SELECT u.id, u.nama, u.email, u.password, u.role, u.status_aktif,
+               k.status_data
+        FROM users u
+        LEFT JOIN karyawan k ON k.user_id = u.id
+        WHERE u.email = ?
+        LIMIT 1
+      `,
+      [email],
+    );
+
+    const user = rows[0];
+
+    if (!user || user.status_aktif !== 1) {
+      return jsonNoStore({ message: "Akun tidak ditemukan atau tidak aktif." }, 401);
+    }
+
+    if (user.role === "karyawan" && user.status_data === "nonaktif") {
+      return jsonNoStore(
+        {
+          message:
+            "Akun Anda sudah dinonaktifkan karena sudah tidak bekerja di perusahaan. Hubungi HR bila ini keliru.",
+        },
+        403,
+      );
+    }
+
+    const [hashRows] = await pool.query<RowDataPacket[]>(
+      "SELECT SHA2(?, 256) AS password_hash",
+      [password],
+    );
+
+    const inputHash = String(hashRows[0]?.password_hash ?? "");
+
+    if (inputHash !== user.password) {
+      return jsonNoStore({ message: "Email atau password salah." }, 401);
+    }
+
+    await clearAllSessionCookies();
+
+    if (user.role === "admin") {
+      await setAdminSessionCookie({
+        id: user.id,
+        email: user.email,
+        fullName: user.nama,
+      });
+
+      return jsonNoStore({
+        message: "Login admin berhasil.",
+        role: "admin",
+        redirectTo: "/admin",
+      });
+    }
+
+    if (user.role === "spv") {
+      await setSpvSessionCookie({
+        id: user.id,
+        email: user.email,
+        fullName: user.nama,
+      });
+
+      return jsonNoStore({
+        message: "Login SPV berhasil.",
+        role: "spv",
+        redirectTo: "/spv/jadwal",
+      });
+    }
+
+    await setEmployeeSessionCookie({
+      id: user.id,
+      userId: user.id,
+      email: user.email,
+      fullName: user.nama,
+    });
+
+    const todayJakarta = new Date(
+      new Date().toLocaleString("en-US", { timeZone: "Asia/Jakarta" }),
+    );
+    const isPayrollDay = todayJakarta.getDate() === 1;
+
+    return jsonNoStore({
+      message: "Login karyawan berhasil.",
+      role: "karyawan",
+      redirectTo: "/employee/check-in",
+      showPayrollGreeting: isPayrollDay,
+      employeeName: user.nama,
+    });
+  } catch (error) {
+    console.error("Login error", error);
+
+    return jsonNoStore({ message: "Gagal memproses login." }, 500);
+  }
+}

@@ -1,26 +1,211 @@
 @import "tailwindcss";
 
+/* ============================================================
+   Design tokens — "warm-ink + oxblood" (AYRES HR)
+   Light is the default; dark follows prefers-color-scheme and can
+   be forced via [data-theme]. Colors live as raw vars here and are
+   mapped into Tailwind's theme below so utilities stay theme-aware.
+   ============================================================ */
 :root {
-  --background: #ffffff;
-  --foreground: #171717;
+  color-scheme: light;
+
+  --paper: #f7f6f4;
+  --surface: #ffffff;
+  --surface-2: #f1efec;
+  --line: #e6e2dc;
+  --line-strong: #d7d0c8;
+
+  --ink: #1c1718;
+  --ink-2: #5f5653;
+  --muted: #938a85;
+
+  --primary: #8f1d22;
+  --primary-strong: #731319;
+  --primary-weak: #fbedec;
+  --on-primary: #ffffff;
+
+  --success: #2e7d5b;
+  --success-weak: #e6f2ec;
+  --warning: #b5790e;
+  --warning-weak: #fbf0dd;
+  --danger: #c0392b;
+  --danger-weak: #fbeae7;
+  --info: #2d6e8e;
+  --info-weak: #e6f1f5;
+
+  --focus: #8f1d22;
+
+  --shadow-sm: 0 1px 2px rgba(28, 23, 24, 0.06), 0 1px 1px rgba(28, 23, 24, 0.04);
+  --shadow-md: 0 8px 24px rgba(28, 23, 24, 0.1);
+  --shadow-lg: 0 20px 48px rgba(28, 23, 24, 0.16);
 }
 
-@theme inline {
-  --color-background: var(--background);
-  --color-foreground: var(--foreground);
-  --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
+:root[data-theme="dark"],
+:root:not([data-theme="light"]) {
+  /* dark values applied only under the media query below + always under
+     [data-theme="dark"]. The media wrapper lives further down. */
 }
 
 @media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
+  :root:not([data-theme="light"]) {
+    color-scheme: dark;
+
+    --paper: #141110;
+    --surface: #1c1917;
+    --surface-2: #26211e;
+    --line: #322c28;
+    --line-strong: #40382f;
+
+    --ink: #f2eeea;
+    --ink-2: #b7ada6;
+    --muted: #8a7f78;
+
+    --primary: #d9484c;
+    --primary-strong: #c23a40;
+    --primary-weak: #2a1618;
+    --on-primary: #ffffff;
+
+    --success: #4caf82;
+    --success-weak: #15271f;
+    --warning: #d9a531;
+    --warning-weak: #2a2213;
+    --danger: #e0695c;
+    --danger-weak: #2b1714;
+    --info: #5aa0c0;
+    --info-weak: #122630;
+
+    --focus: #d9484c;
+
+    --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.4);
+    --shadow-md: 0 10px 28px rgba(0, 0, 0, 0.5);
+    --shadow-lg: 0 24px 56px rgba(0, 0, 0, 0.6);
   }
 }
 
+:root[data-theme="dark"] {
+  color-scheme: dark;
+
+  --paper: #141110;
+  --surface: #1c1917;
+  --surface-2: #26211e;
+  --line: #322c28;
+  --line-strong: #40382f;
+
+  --ink: #f2eeea;
+  --ink-2: #b7ada6;
+  --muted: #8a7f78;
+
+  --primary: #d9484c;
+  --primary-strong: #c23a40;
+  --primary-weak: #2a1618;
+  --on-primary: #ffffff;
+
+  --success: #4caf82;
+  --success-weak: #15271f;
+  --warning: #d9a531;
+  --warning-weak: #2a2213;
+  --danger: #e0695c;
+  --danger-weak: #2b1714;
+  --info: #5aa0c0;
+  --info-weak: #122630;
+
+  --focus: #d9484c;
+
+  --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.4);
+  --shadow-md: 0 10px 28px rgba(0, 0, 0, 0.5);
+  --shadow-lg: 0 24px 56px rgba(0, 0, 0, 0.6);
+}
+
+/* Map raw tokens into Tailwind v4 theme (utilities: bg-surface, text-ink, …) */
+@theme inline {
+  --color-paper: var(--paper);
+  --color-surface: var(--surface);
+  --color-surface-2: var(--surface-2);
+  --color-line: var(--line);
+  --color-line-strong: var(--line-strong);
+
+  --color-ink: var(--ink);
+  --color-ink-2: var(--ink-2);
+  --color-muted: var(--muted);
+
+  --color-primary: var(--primary);
+  --color-primary-strong: var(--primary-strong);
+  --color-primary-weak: var(--primary-weak);
+  --color-on-primary: var(--on-primary);
+
+  --color-success: var(--success);
+  --color-success-weak: var(--success-weak);
+  --color-warning: var(--warning);
+  --color-warning-weak: var(--warning-weak);
+  --color-danger: var(--danger);
+  --color-danger-weak: var(--danger-weak);
+  --color-info: var(--info);
+  --color-info-weak: var(--info-weak);
+
+  --font-sans: var(--font-plex), ui-sans-serif, system-ui, sans-serif;
+}
+
+@theme {
+  --radius-sm: 6px;
+  --radius-md: 8px;
+  --radius-lg: 12px;
+  --radius-xl: 16px;
+}
+
+/* ===== Base ===== */
+* {
+  box-sizing: border-box;
+}
+
+html {
+  scroll-behavior: smooth;
+}
+
 body {
-  background: var(--background);
-  color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+  margin: 0;
+  min-height: 100vh;
+  background: var(--paper);
+  color: var(--ink);
+  font-family: var(--font-plex), ui-sans-serif, system-ui, sans-serif;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+/* Tabular, lining figures for money/metrics/tables */
+.nums {
+  font-variant-numeric: tabular-nums lining-nums;
+}
+
+a,
+button,
+input,
+select,
+textarea {
+  transition:
+    background-color 160ms ease,
+    border-color 160ms ease,
+    color 160ms ease,
+    box-shadow 160ms ease,
+    transform 160ms ease;
+}
+
+:focus-visible {
+  outline: 2px solid var(--focus);
+  outline-offset: 2px;
+  border-radius: 2px;
+}
+
+::selection {
+  background: color-mix(in srgb, var(--primary) 22%, transparent);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.001ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.001ms !important;
+    scroll-behavior: auto !important;
+  }
 }

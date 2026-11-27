@@ -19,9 +19,9 @@
 -- Current Database: `hris_payroll_app_v2`
 --
 
-CREATE DATABASE /*!32312 IF NOT EXISTS*/ `hris_payroll_app_v2` /*!40100 DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci */;
+-- CREATE DATABASE /*!32312 IF NOT EXISTS*/ `hris_payroll_app_v2` /*!40100 DEFAULT CHARACTER SET utf8mb4 COLLATE utf8mb4_general_ci */;
 
-USE `hris_payroll_app_v2`;
+-- USE `hris_payroll_app_v2`;
 
 --
 -- Table structure for table `absensi`

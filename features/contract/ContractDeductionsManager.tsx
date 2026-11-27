@@ -30,6 +30,14 @@ function ymToStr(ym: number | null): string {
   return `${y}-${String(m).padStart(2, "0")}`;
 }
 
+const MONTHS_ID = ["Jan", "Feb", "Mar", "Apr", "Mei", "Jun", "Jul", "Agu", "Sep", "Okt", "Nov", "Des"];
+function fmtYm(ym: number | null): string {
+  if (!ym) return "—";
+  const y = Math.floor(ym / 100);
+  const m = ym % 100;
+  return `${MONTHS_ID[m - 1] ?? "?"} ${y}`;
+}
+
 export function ContractDeductionsManager({ plans, employees }: { plans: Plan[]; employees: EmpOpt[] }) {
   const router = useRouter();
   const [showAdd, setShowAdd] = useState(false);
@@ -103,6 +111,7 @@ export function ContractDeductionsManager({ plans, employees }: { plans: Plan[];
               <THead>
                 <TR>
                   <TH>Karyawan</TH>
+                  <TH>Mulai</TH>
                   <TH className="text-right">Per bulan</TH>
                   <TH className="text-right">Terpotong</TH>
                   <TH className="text-right">Sisa</TH>
@@ -114,6 +123,7 @@ export function ContractDeductionsManager({ plans, employees }: { plans: Plan[];
                 {plans.map((p) => (
                   <TR key={p.employeeId}>
                     <TD><div className="font-medium text-ink">{p.employeeName}</div><div className="text-[13px] text-ink-2">{p.role || p.nip}</div></TD>
+                    <TD className="text-ink-2">{fmtYm(p.firstDeductionYm)}</TD>
                     <TD className="nums text-right text-ink-2">{formatRupiah(p.monthlyDeduction)}</TD>
                     <TD className="nums text-right text-ink-2">{formatRupiah(p.totalDeductedAmount)}</TD>
                     <TD className="nums text-right text-ink">{formatRupiah(p.remainingDeduction)}</TD>

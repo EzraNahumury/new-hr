@@ -156,6 +156,14 @@ export default function AppShell({ role, user, caps, children }: Props) {
         <div className="min-h-0 flex-1 overflow-y-auto px-3 pb-4">{sidebar}</div>
         <button
           type="button"
+          onClick={logout}
+          className="flex items-center gap-2 border-t border-line px-4 py-3 text-[13px] font-medium text-danger hover:bg-danger-weak"
+          title="Keluar"
+        >
+          <LogOut className="h-4 w-4" /> {collapsed ? null : "Keluar"}
+        </button>
+        <button
+          type="button"
           onClick={toggleCollapsed}
           className="flex items-center gap-2 border-t border-line px-4 py-3 text-[13px] text-ink-2 hover:text-ink"
           title={collapsed ? "Perlebar sidebar" : "Perkecil sidebar"}
@@ -197,6 +205,13 @@ export default function AppShell({ role, user, caps, children }: Props) {
                 collapsed={false}
               />
             </div>
+            <button
+              type="button"
+              onClick={() => { setMobileOpen(false); logout(); }}
+              className="flex items-center gap-2 border-t border-line px-4 py-3.5 text-sm font-medium text-danger hover:bg-danger-weak"
+            >
+              <LogOut className="h-4 w-4" /> Keluar
+            </button>
           </aside>
         </div>
       ) : null}

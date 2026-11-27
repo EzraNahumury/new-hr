@@ -148,7 +148,16 @@ export function AttendanceApprovalManager({
                       <div className="text-[13px] text-ink-2">{r.divisi || r.nip || "—"}</div>
                     </TD>
                     <TD className="text-ink-2">{r.tanggal}</TD>
-                    <TD className="text-ink-2">{r.jenis ? JENIS[r.jenis] ?? r.jenis : "—"}</TD>
+                    <TD className="text-ink-2">
+                      <div>{r.jenis ? JENIS[r.jenis] ?? r.jenis : "—"}</div>
+                      {r.keterangan ? (
+                        <div className="mt-0.5 max-w-[240px] truncate text-[13px] text-ink-2" title={r.keterangan}>
+                          “{r.keterangan}”
+                        </div>
+                      ) : (
+                        <div className="mt-0.5 text-[13px] text-muted">Tanpa alasan</div>
+                      )}
+                    </TD>
                     <TD className="nums text-ink-2">
                       {r.jamMasuk || "—"}{r.jamPulang ? `–${r.jamPulang}` : ""}
                       {r.lateMinutes ? <span className="ml-1 text-warning">+{r.lateMinutes}m</span> : null}

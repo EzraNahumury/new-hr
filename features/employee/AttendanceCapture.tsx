@@ -140,9 +140,17 @@ export function AttendanceCapture({
     );
     locationTimeoutRef.current = setTimeout(() => {
       setIsLocating(false); setLocationPromptActive(false); stopLocationTracking();
-      if (bestAccuracyRef.current !== null) setLocationMessage(`Lokasi terbaik ditemukan. Akurasi ~${Math.round(bestAccuracyRef.current)} m.`);
-      else setErrorMessage("Lokasi belum berhasil didapatkan. Coba cari ulang.");
-    }, 15000);
+      const best = bestAccuracyRef.current;
+      if (best !== null) {
+        setLocationMessage(
+          best > 100
+            ? `Akurasi GPS masih rendah (~${Math.round(best)} m). Aktifkan "Lokasi presisi tinggi" di HP, keluar dari dalam ruangan, lalu tekan Refresh.`
+            : `Lokasi terbaik ditemukan. Akurasi ~${Math.round(best)} m.`,
+        );
+      } else {
+        setErrorMessage("Lokasi belum berhasil didapatkan. Coba tekan Refresh.");
+      }
+    }, 25000);
   }, [applySnapshot, stopLocationTracking]);
 
   useEffect(() => {
@@ -368,6 +376,11 @@ export function AttendanceCapture({
               <DeviceRow ok={cameraReady} icon={<Camera className="h-4 w-4" />} label="Kamera" value={cameraReady ? "Diizinkan" : "Menunggu izin"} />
               <DeviceRow ok={locationReady} icon={<MapPin className="h-4 w-4" />} label="Lokasi" value={locationReady ? "Diizinkan" : isLocating ? "Sedang mencari…" : locationPromptActive ? "Meminta izin…" : "Belum diizinkan"} badge={locationAccuracy ? `~${Math.round(locationAccuracy)} m` : undefined} />
               {location ? <div className="rounded-lg bg-surface-2 px-3 py-2 text-[11px] nums text-ink-2">{location.latitude.toFixed(6)}, {location.longitude.toFixed(6)}</div> : null}
+              {locationAccuracy !== null && locationAccuracy > 100 ? (
+                <div className="rounded-lg border border-warning/40 bg-warning-weak px-3 py-2 text-[11px] leading-relaxed text-warning">
+                  Akurasi GPS rendah (~{Math.round(locationAccuracy)} m) — titik lokasi bisa meleset jauh. Aktifkan GPS / &quot;Lokasi presisi tinggi&quot;, keluar ruangan, lalu tekan Refresh sampai akurasi &lt; 50 m.
+                </div>
+              ) : null}
             </div>
             {locationMessage ? <p className="mt-3 text-[11px] text-ink-2">{locationMessage}</p> : null}
           </Panel>

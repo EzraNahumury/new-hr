@@ -119,6 +119,7 @@ export function EmployeesManager({
   const [err, setErr] = useState("");
   const [pwFor, setPwFor] = useState<Employee | null>(null);
   const [pw, setPw] = useState("");
+  const [extra, setExtra] = useState<string[]>([]);
 
   const filtered = useMemo(() => {
     const s = q.trim().toLowerCase();
@@ -133,12 +134,15 @@ export function EmployeesManager({
   function openCreate() {
     setEditing(null);
     setForm(toForm(null));
+    setExtra([]);
     setErr("");
     setShowForm(true);
   }
   function openEdit(e: Employee) {
     setEditing(e);
     setForm(toForm(e));
+    const xp = (e as Record<string, unknown>).extraPlacements;
+    setExtra(Array.isArray(xp) ? (xp as string[]).filter(Boolean) : []);
     setErr("");
     setShowForm(true);
   }
@@ -149,6 +153,7 @@ export function EmployeesManager({
     try {
       const body: Record<string, unknown> = { ...form };
       body.annualRaise = Number(form.annualRaise || 0);
+      body.extraPlacements = extra.filter((v) => v && v !== form.placement);
       const url = editing
         ? `/api/admin/employees/${editing.id}`
         : "/api/admin/employees";
@@ -344,6 +349,41 @@ export function EmployeesManager({
               </div>
             </div>
           ))}
+
+          <div>
+            <h3 className="mb-1 text-sm font-semibold text-ink">Penempatan Tambahan</h3>
+            <p className="mb-3 text-[13px] text-ink-2">
+              Pilih penempatan lain selain penempatan utama. Boleh lebih dari satu.
+            </p>
+            {lookups.placements.length === 0 ? (
+              <p className="text-[13px] text-muted">Belum ada master penempatan.</p>
+            ) : (
+              <div className="flex flex-wrap gap-2">
+                {lookups.placements.map((o) => {
+                  const on = extra.includes(o.value);
+                  const isPrimary = form.placement === o.value;
+                  return (
+                    <button
+                      type="button"
+                      key={o.value}
+                      disabled={isPrimary}
+                      onClick={() =>
+                        setExtra((s) => (on ? s.filter((v) => v !== o.value) : [...s, o.value]))
+                      }
+                      className={`rounded-full border px-3 py-1.5 text-sm transition ${
+                        on
+                          ? "border-[color:var(--primary)] bg-primary-weak text-primary"
+                          : "border-line text-ink-2 hover:bg-surface-2"
+                      } ${isPrimary ? "cursor-not-allowed opacity-40" : ""}`}
+                      title={isPrimary ? "Sudah dipilih sebagai penempatan utama" : undefined}
+                    >
+                      {o.label}
+                    </button>
+                  );
+                })}
+              </div>
+            )}
+          </div>
         </div>
       </Dialog>
 

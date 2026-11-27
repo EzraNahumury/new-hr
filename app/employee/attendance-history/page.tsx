@@ -31,8 +31,22 @@ export default async function EmployeeAttendanceHistoryPage() {
                   <TR key={i}>
                     <TD className="text-ink">{r.tanggal}</TD>
                     <TD>
-                      <StatusBadge status={r.status_absensi} />
-                      {r.approval_status === "pending" ? <span className="ml-1 text-[12px] text-warning">(menunggu approval)</span> : null}
+                      <div className="flex flex-wrap items-center gap-1.5">
+                        <StatusBadge status={r.status_absensi} />
+                        {r.approval_status ? (
+                          <StatusBadge
+                            status={
+                              r.approval_status === "pending"
+                                ? "menunggu"
+                                : r.approval_status === "approved"
+                                  ? "disetujui"
+                                  : r.approval_status === "rejected"
+                                    ? "ditolak"
+                                    : r.approval_status
+                            }
+                          />
+                        ) : null}
+                      </div>
                     </TD>
                     <TD className="nums text-ink-2">{r.jam_masuk || "—"}</TD>
                     <TD className="nums text-ink-2">{r.jam_pulang || "—"}</TD>

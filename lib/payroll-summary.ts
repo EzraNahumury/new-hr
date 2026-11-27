@@ -1170,9 +1170,15 @@ export async function getAdminPayrollSummarySheet(period?: {
     // Uang kerajinan = OTOMATIS 10% gaji bulanan (gaji pokok bulanan), seperti Summary Penjahit.
     // Dipaksa 10% (input manual uang_kerajinan diabaikan) untuk karyawan non-freelance.
     // KECUALI penempatan JNE: JNE TIDAK dapat uang kerajinan (= 0).
+    // KECUALI karyawan BARU (masuk di periode ini): gajinya hanya prorata hari masuk, TANPA uang
+    // kerajinan — sehingga tidak ada pula potongan kerajinan di periode pertamanya.
+    const isNewEmployee =
+      !!row.tanggal_masuk_pertama &&
+      row.tanggal_masuk_pertama >= range.startSql &&
+      row.tanggal_masuk_pertama <= range.endSql;
     const isJnePlacement = (row.penempatan ?? "").trim().toLowerCase() === "jne";
     const fixedDiligenceAllowance =
-      isFreelance || isJnePlacement ? 0 : Math.round(monthlyBaseSalary * 0.1);
+      isFreelance || isJnePlacement || isNewEmployee ? 0 : Math.round(monthlyBaseSalary * 0.1);
     const bpjs = isFreelance ? 0 : (compBpjs || toNumber(row.bpjs));
     const performanceBonus = isFreelance ? 0 :
       (payrollType === "sales" && !isSalesNasional
@@ -1217,10 +1223,6 @@ export async function getAdminPayrollSummarySheet(period?: {
       const workedBeforeLeave = presentDays + attendance.holiday + halfDayCount;
       chDays = Math.min(25, workedBeforeLeave + leaveWorkDays);
     }
-    const isNewEmployee =
-      !!row.tanggal_masuk_pertama &&
-      row.tanggal_masuk_pertama >= range.startSql &&
-      row.tanggal_masuk_pertama <= range.endSql;
     // Gaji pokok = insentif kehadiran (gaji/hari) × (hari masuk + libur BERBAYAR + ½hari),
     // aturan UNIVERSAL — termasuk karyawan baru. Karyawan baru dengan rate harian (mis.
     // insentif 20.000/hari) TIDAK lagi diprorata dari Gaji Kontrak bulanan: dulu jalur prorate
